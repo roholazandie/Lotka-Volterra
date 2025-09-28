@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lotka-Volterra Dynamics</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .control-group label {
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+        .control-group span {
+            font-size: 12px;
+            color: #ccc;
+        }
+        .canvas-container {
+            display: flex;
+            justify-content: center;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        canvas {
+            border: 1px solid #444;
+            border-radius: 5px;
+            background: #000;
+        }
+        .equations {
+            text-align: center;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .info-box {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .reset-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 10px;
+        }
+        .reset-btn:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Lotka-Volterra Dynamics</h1>
+            <p>Interactive Phase Portrait with Animated Trajectories</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="alpha">α (Prey growth rate)</label>
+                <input type="range" id="alpha" min="0.1" max="3" step="0.1" value="1">
+                <span id="alpha-value">1.0</span>
+            </div>
+            <div class="control-group">
+                <label for="beta">β (Predation rate)</label>
+                <input type="range" id="beta" min="0.1" max="3" step="0.1" value="1">
+                <span id="beta-value">1.0</span>
+            </div>
+            <div class="control-group">
+                <label for="gamma">γ (Predator death rate)</label>
+                <input type="range" id="gamma" min="0.1" max="3" step="0.1" value="1">
+                <span id="gamma-value">1.0</span>
+            </div>
+            <div class="control-group">
+                <label for="delta">δ (Predation efficiency)</label>
+                <input type="range" id="delta" min="0.1" max="3" step="0.1" value="1">
+                <span id="delta-value">1.0</span>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="canvas" width="800" height="600"></canvas>
+        </div>
+
+        <button class="reset-btn" onclick="resetAnimation()">Reset Animation</button>
+
+        <div class="equations">
+            <div><strong>Lotka-Volterra Equations:</strong></div>
+            <div>dx/dt = αx - βxy</div>
+            <div>dy/dt = -γy + δxy</div>
+        </div>
+
+        <div class="info">
+            <div class="info-box">
+                <h3>Variables:</h3>
+                <ul>
+                    <li><strong>x:</strong> Prey population</li>
+                    <li><strong>y:</strong> Predator population</li>
+                </ul>
+            </div>
+            <div class="info-box">
+                <h3>Parameters:</h3>
+                <ul>
+                    <li><strong>α:</strong> Intrinsic prey growth rate</li>
+                    <li><strong>β:</strong> Predation rate coefficient</li>
+                    <li><strong>γ:</strong> Predator death rate</li>
+                    <li><strong>δ:</strong> Efficiency of turning prey into predators</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Parameters
+        let alpha = 1.0;  // Prey growth rate
+        let beta = 1.0;   // Predation rate
+        let gamma = 1.0;  // Predator death rate
+        let delta = 1.0;  // Predation efficiency
+
+        // Animation state
+        let animationId;
+        let time = 0;
+        let trajectories = [];
+        let particles = [];
+
+        // Canvas settings
+        const width = canvas.width;
+        const height = canvas.height;
+        const scale = 120;
+        const centerX = 50;  // Move origin to bottom-left area
+        const centerY = height - 50;
+
+        // Initial conditions for different trajectories
+        const initialConditions = [
+            {x: 2, y: 1, color: '#ff6b6b'},
+            {x: 3, y: 1.5, color: '#4ecdc4'},
+            {x: 1.5, y: 2, color: '#45b7d1'},
+            {x: 2.5, y: 2.5, color: '#f9ca24'},
+            {x: 1, y: 1, color: '#6c5ce7'}
+        ];
+
+        class Particle {
+            constructor(x0, y0, color) {
+                this.x0 = x0;
+                this.y0 = y0;
+                this.color = color;
+                this.t = 0;
+                this.x = x0;
+                this.y = y0;
+                this.trail = [];
+                this.maxTrailLength = 300;
+            }
+
+            update(dt) {
+                // Runge-Kutta 4th order integration
+                const h = dt;
+
+                const k1x = alpha * this.x - beta * this.x * this.y;
+                const k1y = -gamma * this.y + delta * this.x * this.y;
+
+                const k2x = alpha * (this.x + h/2 * k1x) - beta * (this.x + h/2 * k1x) * (this.y + h/2 * k1y);
+                const k2y = -gamma * (this.y + h/2 * k1y) + delta * (this.x + h/2 * k1x) * (this.y + h/2 * k1y);
+
+                const k3x = alpha * (this.x + h/2 * k2x) - beta * (this.x + h/2 * k2x) * (this.y + h/2 * k2y);
+                const k3y = -gamma * (this.y + h/2 * k2y) + delta * (this.x + h/2 * k2x) * (this.y + h/2 * k2y);
+
+                const k4x = alpha * (this.x + h * k3x) - beta * (this.x + h * k3x) * (this.y + h * k3y);
+                const k4y = -gamma * (this.y + h * k3y) + delta * (this.x + h * k3x) * (this.y + h * k3y);
+
+                this.x += h/6 * (k1x + 2*k2x + 2*k3x + k4x);
+                this.y += h/6 * (k1y + 2*k2y + 2*k3y + k4y);
+
+                // Add to trail
+                this.trail.push({x: this.x, y: this.y});
+                if (this.trail.length > this.maxTrailLength) {
+                    this.trail.shift();
+                }
+
+                this.t += dt;
+            }
+
+            draw() {
+                // Draw trail
+                if (this.trail.length > 1) {
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+
+                    for (let i = 0; i < this.trail.length - 1; i++) {
+                        const alpha = i / this.trail.length;
+                        ctx.globalAlpha = alpha * 0.7;
+
+                        const screenX1 = centerX + this.trail[i].x * scale;
+                        const screenY1 = centerY - this.trail[i].y * scale;
+                        const screenX2 = centerX + this.trail[i + 1].x * scale;
+                        const screenY2 = centerY - this.trail[i + 1].y * scale;
+
+                        ctx.beginPath();
+                        ctx.moveTo(screenX1, screenY1);
+                        ctx.lineTo(screenX2, screenY2);
+                        ctx.stroke();
+                    }
+                }
+
+                // Draw particle
+                ctx.globalAlpha = 1;
+                const screenX = centerX + this.x * scale;
+                const screenY = centerY - this.y * scale;
+
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+                ctx.fill();
+
+                // Add glow effect
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 4, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        function initializeParticles() {
+            particles = [];
+            initialConditions.forEach(ic => {
+                particles.push(new Particle(ic.x, ic.y, ic.color));
+            });
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 0.5;
+
+            // Vertical lines (only positive x)
+            for (let x = centerX; x < width; x += scale) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+
+            // Horizontal lines (only positive y)
+            for (let y = centerY; y > 0; y -= scale) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            // Axes
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 2;
+
+            // X-axis (bottom)
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(width, centerY);
+            ctx.stroke();
+
+            // Y-axis (left)
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(centerX, 0);
+            ctx.stroke();
+        }
+
+        function drawLabels() {
+            ctx.fillStyle = '#aaa';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+
+            // X-axis labels (positive values only)
+            for (let i = 1; i <= 6; i++) {
+                const x = centerX + i * scale;
+                if (x < width) {
+                    ctx.fillText(i.toString(), x, centerY + 20);
+                }
+            }
+
+            // Y-axis labels (positive values only)
+            ctx.textAlign = 'right';
+            for (let i = 1; i <= 4; i++) {
+                const y = centerY - i * scale;
+                if (y > 0) {
+                    ctx.fillText(i.toString(), centerX - 10, y + 5);
+                }
+            }
+
+            // Axis labels
+            ctx.font = '16px Arial';
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Prey Population (x)', centerX + 200, centerY + 40);
+
+            ctx.save();
+            ctx.translate(15, centerY - 100);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('Predator Population (y)', 0, 0);
+            ctx.restore();
+        }
+
+        function drawEquilibrium() {
+            // Fixed point at (γ/δ, α/β)
+            const eqX = gamma / delta;
+            const eqY = alpha / beta;
+
+            const screenX = centerX + eqX * scale;
+            const screenY = centerY - eqY * scale;
+
+            if (screenX >= centerX && screenX <= width && screenY >= 0 && screenY <= centerY) {
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 4, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+
+            drawGrid();
+            drawLabels();
+            drawEquilibrium();
+
+            // Update and draw particles
+            particles.forEach(particle => {
+                particle.update(0.02);
+                particle.draw();
+            });
+
+            time += 0.02;
+            animationId = requestAnimationFrame(animate);
+        }
+
+        function resetAnimation() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+            time = 0;
+            initializeParticles();
+            animate();
+        }
+
+        // Parameter controls
+        function setupControls() {
+            const controls = ['alpha', 'beta', 'gamma', 'delta'];
+
+            controls.forEach(param => {
+                const slider = document.getElementById(param);
+                const valueDisplay = document.getElementById(param + '-value');
+
+                slider.addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    window[param] = value;
+                    valueDisplay.textContent = value.toFixed(1);
+                    resetAnimation();
+                });
+            });
+        }
+
+        // Initialize
+        setupControls();
+        initializeParticles();
+        animate();
+    </script>
+</body>
+</html>
