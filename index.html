@@ -101,6 +101,11 @@
 
         <div class="controls">
             <div class="control-group">
+                <label for="numParticles">Number of Particles</label>
+                <input type="range" id="numParticles" min="1" max="10" step="1" value="5">
+                <span id="numParticles-value">5</span>
+            </div>
+            <div class="control-group">
                 <label for="alpha">α (Prey growth rate)</label>
                 <input type="range" id="alpha" min="0.1" max="3" step="0.1" value="1">
                 <span id="alpha-value">1.0</span>
@@ -155,207 +160,371 @@
     </div>
 
     <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-
+        console.log("Script starting...");
+        
+        var canvas = document.getElementById('canvas');
+        var ctx = canvas.getContext('2d');
+        console.log("Canvas initialized");
+        
         // Parameters
-        let alpha = 1.0;  // Prey growth rate
-        let beta = 1.0;   // Predation rate
-        let gamma = 1.0;  // Predator death rate
-        let delta = 1.0;  // Predation efficiency
-
+        var alpha = 1.0;  // Prey growth rate
+        var beta = 1.0;   // Predation rate
+        var gamma = 1.0;  // Predator death rate
+        var delta = 1.0;  // Predation efficiency
+        var numParticles = 5; // Number of particles to display
+        
         // Animation state
-        let animationId;
-        let time = 0;
-        let trajectories = [];
-        let particles = [];
-
+        var animationId;
+        var time = 0;
+        var trajectories = [];
+        var particles = [];
+        var orbitPaths = [];
+        
         // Canvas settings
-        const width = canvas.width;
-        const height = canvas.height;
-        const scale = 120;
-        const centerX = 50;  // Move origin to bottom-left area
-        const centerY = height - 50;
-
-        // Initial conditions for different trajectories
-        const initialConditions = [
-            {x: 2, y: 1, color: '#ff6b6b'},
-            {x: 3, y: 1.5, color: '#4ecdc4'},
-            {x: 1.5, y: 2, color: '#45b7d1'},
-            {x: 2.5, y: 2.5, color: '#f9ca24'},
-            {x: 1, y: 1, color: '#6c5ce7'}
-        ];
-
-        class Particle {
-            constructor(x0, y0, color) {
-                this.x0 = x0;
-                this.y0 = y0;
-                this.color = color;
-                this.t = 0;
-                this.x = x0;
-                this.y = y0;
-                this.trail = [];
-                this.maxTrailLength = 300;
+        var width = canvas.width;
+        var height = canvas.height;
+        var scale = 120;
+        var centerX = 50;  // Move origin to bottom-left area
+        var centerY = height - 50;
+        
+        console.log("Variables initialized");
+        
+        // Initial conditions for different trajectories (pool of 10)
+        var allInitialConditions = [];
+        allInitialConditions.push({x: 2, y: 1, color: '#ff6b6b'});
+        allInitialConditions.push({x: 3, y: 1.5, color: '#4ecdc4'});
+        allInitialConditions.push({x: 1.5, y: 2, color: '#45b7d1'});
+        allInitialConditions.push({x: 2.5, y: 2.5, color: '#f9ca24'});
+        allInitialConditions.push({x: 1, y: 1, color: '#6c5ce7'});
+        allInitialConditions.push({x: 3.5, y: 2, color: '#ff9ff3'});
+        allInitialConditions.push({x: 2, y: 3, color: '#54a0ff'});
+        allInitialConditions.push({x: 1.2, y: 1.8, color: '#48dbfb'});
+        allInitialConditions.push({x: 2.8, y: 1.2, color: '#ff6348'});
+        allInitialConditions.push({x: 1.8, y: 2.2, color: '#1dd1a1'});
+        
+        var initialConditions = [];
+        
+        console.log("Initial conditions set");
+        
+        function updateInitialConditions() {
+            initialConditions = [];
+            for (var i = 0; i < numParticles && i < allInitialConditions.length; i++) {
+                initialConditions.push(allInitialConditions[i]);
             }
-
-            update(dt) {
-                // Runge-Kutta 4th order integration
-                const h = dt;
-
-                const k1x = alpha * this.x - beta * this.x * this.y;
-                const k1y = -gamma * this.y + delta * this.x * this.y;
-
-                const k2x = alpha * (this.x + h/2 * k1x) - beta * (this.x + h/2 * k1x) * (this.y + h/2 * k1y);
-                const k2y = -gamma * (this.y + h/2 * k1y) + delta * (this.x + h/2 * k1x) * (this.y + h/2 * k1y);
-
-                const k3x = alpha * (this.x + h/2 * k2x) - beta * (this.x + h/2 * k2x) * (this.y + h/2 * k2y);
-                const k3y = -gamma * (this.y + h/2 * k2y) + delta * (this.x + h/2 * k2x) * (this.y + h/2 * k2y);
-
-                const k4x = alpha * (this.x + h * k3x) - beta * (this.x + h * k3x) * (this.y + h * k3y);
-                const k4y = -gamma * (this.y + h * k3y) + delta * (this.x + h * k3x) * (this.y + h * k3y);
-
-                this.x += h/6 * (k1x + 2*k2x + 2*k3x + k4x);
-                this.y += h/6 * (k1y + 2*k2y + 2*k3y + k4y);
-
-                // Add to trail
-                this.trail.push({x: this.x, y: this.y});
-                if (this.trail.length > this.maxTrailLength) {
-                    this.trail.shift();
+            console.log("Using", initialConditions.length, "particles");
+        }
+        
+        // Initialize with default number
+        updateInitialConditions();
+        
+        function calculateOrbit(x0, y0, numPoints) {
+            console.log("Calculating orbit for", x0, y0);
+            if (!numPoints) numPoints = 2000;
+            var x = x0;
+            var y = y0;
+            var dt = 0.002;
+            var points = [];
+            
+            // Store initial position
+            var x_initial = x0;
+            var y_initial = y0;
+            var threshold = 0.01;
+            var minSteps = 500;
+            var maxSteps = 5000;
+            
+            for (var i = 0; i < maxSteps; i++) {
+                var point = {};
+                point.x = x;
+                point.y = y;
+                points.push(point);
+                
+                // Runge-Kutta 4th order step
+                var k1x = alpha * x - beta * x * y;
+                var k1y = -gamma * y + delta * x * y;
+                
+                var k2x = alpha * (x + dt/2 * k1x) - beta * (x + dt/2 * k1x) * (y + dt/2 * k1y);
+                var k2y = -gamma * (y + dt/2 * k1y) + delta * (x + dt/2 * k1x) * (y + dt/2 * k1y);
+                
+                var k3x = alpha * (x + dt/2 * k2x) - beta * (x + dt/2 * k2x) * (y + dt/2 * k2y);
+                var k3y = -gamma * (y + dt/2 * k2y) + delta * (x + dt/2 * k2x) * (y + dt/2 * k2y);
+                
+                var k4x = alpha * (x + dt * k3x) - beta * (x + dt * k3x) * (y + dt * k3y);
+                var k4y = -gamma * (y + dt * k3y) + delta * (x + dt * k3x) * (y + dt * k3y);
+                
+                x += dt/6 * (k1x + 2*k2x + 2*k3x + k4x);
+                y += dt/6 * (k1y + 2*k2y + 2*k3y + k4y);
+                
+                // Check if we've completed a full orbit (returned close to start)
+                if (i > minSteps) {
+                    var dx = x - x_initial;
+                    var dy = y - y_initial;
+                    var distance = Math.sqrt(dx*dx + dy*dy);
+                    
+                    if (distance < threshold) {
+                        console.log("Orbit closed after", i, "steps");
+                        // Add the initial point again to ensure closure
+                        var finalPoint = {};
+                        finalPoint.x = x_initial;
+                        finalPoint.y = y_initial;
+                        points.push(finalPoint);
+                        break;
+                    }
                 }
-
-                this.t += dt;
             }
-
-            draw() {
-                // Draw trail
-                if (this.trail.length > 1) {
-                    ctx.strokeStyle = this.color;
-                    ctx.lineWidth = 1;
+            
+            console.log("Orbit calculated with", points.length, "points");
+            return points;
+        }
+        
+        function generateOrbitPaths() {
+            console.log("Generating orbit paths...");
+            orbitPaths = [];
+            for (var i = 0; i < initialConditions.length; i++) {
+                var ic = initialConditions[i];
+                var orbit = calculateOrbit(ic.x, ic.y);
+                orbitPaths.push(orbit);
+            }
+            console.log("Generated", orbitPaths.length, "orbit paths");
+        }
+        
+        function drawOrbitPaths() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 2;
+            
+            for (var j = 0; j < orbitPaths.length; j++) {
+                var orbit = orbitPaths[j];
+                if (orbit.length > 1) {
                     ctx.beginPath();
-
-                    for (let i = 0; i < this.trail.length - 1; i++) {
-                        const alpha = i / this.trail.length;
-                        ctx.globalAlpha = alpha * 0.7;
-
-                        const screenX1 = centerX + this.trail[i].x * scale;
-                        const screenY1 = centerY - this.trail[i].y * scale;
-                        const screenX2 = centerX + this.trail[i + 1].x * scale;
-                        const screenY2 = centerY - this.trail[i + 1].y * scale;
-
+                    
+                    var started = false;
+                    for (var i = 0; i < orbit.length; i++) {
+                        var point = orbit[i];
+                        var screenX = centerX + point.x * scale;
+                        var screenY = centerY - point.y * scale;
+                        
+                        // Only draw points in visible area
+                        if (screenX >= centerX && screenX <= width && screenY >= 0 && screenY <= centerY) {
+                            if (!started) {
+                                ctx.moveTo(screenX, screenY);
+                                started = true;
+                            } else {
+                                ctx.lineTo(screenX, screenY);
+                            }
+                        }
+                    }
+                    
+                    ctx.stroke();
+                }
+            }
+        }
+        
+        console.log("Functions defined, creating Particle constructor...");
+        
+        function Particle(x0, y0, color) {
+            this.x0 = x0;
+            this.y0 = y0;
+            this.color = color;
+            this.t = 0;
+            this.x = x0;
+            this.y = y0;
+            this.trail = [];
+            this.maxTrailLength = 80;
+        }
+        
+        Particle.prototype.update = function(dt) {
+            // Runge-Kutta 4th order integration
+            var h = dt;
+            
+            var k1x = alpha * this.x - beta * this.x * this.y;
+            var k1y = -gamma * this.y + delta * this.x * this.y;
+            
+            var k2x = alpha * (this.x + h/2 * k1x) - beta * (this.x + h/2 * k1x) * (this.y + h/2 * k1y);
+            var k2y = -gamma * (this.y + h/2 * k1y) + delta * (this.x + h/2 * k1x) * (this.y + h/2 * k1y);
+            
+            var k3x = alpha * (this.x + h/2 * k2x) - beta * (this.x + h/2 * k2x) * (this.y + h/2 * k2y);
+            var k3y = -gamma * (this.y + h/2 * k2y) + delta * (this.x + h/2 * k2x) * (this.y + h/2 * k2y);
+            
+            var k4x = alpha * (this.x + h * k3x) - beta * (this.x + h * k3x) * (this.y + h * k3y);
+            var k4y = -gamma * (this.y + h * k3y) + delta * (this.x + h * k3x) * (this.y + h * k3y);
+            
+            this.x += h/6 * (k1x + 2*k2x + 2*k3x + k4x);
+            this.y += h/6 * (k1y + 2*k2y + 2*k3y + k4y);
+            
+            // Add to trail
+            var trailPoint = {};
+            trailPoint.x = this.x;
+            trailPoint.y = this.y;
+            this.trail.push(trailPoint);
+            if (this.trail.length > this.maxTrailLength) {
+                this.trail.shift();
+            }
+            
+            this.t += dt;
+        };
+        
+        Particle.prototype.draw = function() {
+            // Draw trail with meteorite effect
+            if (this.trail.length > 1) {
+                // Draw multiple layers for glow effect
+                for (var layer = 0; layer < 3; layer++) {
+                    ctx.lineWidth = 6 - layer * 2;
+                    
+                    for (var i = 0; i < this.trail.length - 1; i++) {
+                        // Fade from back to front (meteorite tail effect)
+                        var fadeRatio = i / this.trail.length;
+                        var baseAlpha = Math.pow(fadeRatio, 1.5);
+                        
+                        // Layer-specific alpha for glow
+                        var layerAlpha = baseAlpha * (0.9 - layer * 0.3);
+                        ctx.globalAlpha = layerAlpha;
+                        
+                        var screenX1 = centerX + this.trail[i].x * scale;
+                        var screenY1 = centerY - this.trail[i].y * scale;
+                        var screenX2 = centerX + this.trail[i + 1].x * scale;
+                        var screenY2 = centerY - this.trail[i + 1].y * scale;
+                        
+                        // Outer layers use lighter/brighter color
+                        if (layer === 0) {
+                            ctx.strokeStyle = this.color;
+                        } else if (layer === 1) {
+                            // Add white glow
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                        } else {
+                            // Outer soft glow
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        }
+                        
                         ctx.beginPath();
                         ctx.moveTo(screenX1, screenY1);
                         ctx.lineTo(screenX2, screenY2);
                         ctx.stroke();
                     }
                 }
-
-                // Draw particle
-                ctx.globalAlpha = 1;
-                const screenX = centerX + this.x * scale;
-                const screenY = centerY - this.y * scale;
-
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
-                ctx.fill();
-
-                // Add glow effect
-                ctx.shadowColor = this.color;
-                ctx.shadowBlur = 10;
-                ctx.beginPath();
-                ctx.arc(screenX, screenY, 4, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.shadowBlur = 0;
             }
-        }
-
+            
+            // Draw particle head (the meteorite itself)
+            ctx.globalAlpha = 1;
+            var screenX = centerX + this.x * scale;
+            var screenY = centerY - this.y * scale;
+            
+            // Outer glow
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Bright core
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, 5, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Inner bright spot
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+        };
+        
+        console.log("Particle constructor defined");
+        
         function initializeParticles() {
+            console.log("Initializing particles...");
             particles = [];
-            initialConditions.forEach(ic => {
+            for (var i = 0; i < initialConditions.length; i++) {
+                var ic = initialConditions[i];
                 particles.push(new Particle(ic.x, ic.y, ic.color));
-            });
+            }
+            console.log("Created", particles.length, "particles");
+            generateOrbitPaths();
         }
-
+        
         function drawGrid() {
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 0.5;
-
+            
             // Vertical lines (only positive x)
-            for (let x = centerX; x < width; x += scale) {
+            for (var x = centerX; x < width; x += scale) {
                 ctx.beginPath();
                 ctx.moveTo(x, 0);
                 ctx.lineTo(x, height);
                 ctx.stroke();
             }
-
+            
             // Horizontal lines (only positive y)
-            for (let y = centerY; y > 0; y -= scale) {
+            for (var y = centerY; y > 0; y -= scale) {
                 ctx.beginPath();
                 ctx.moveTo(0, y);
                 ctx.lineTo(width, y);
                 ctx.stroke();
             }
-
+            
             // Axes
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 2;
-
+            
             // X-axis (bottom)
             ctx.beginPath();
             ctx.moveTo(centerX, centerY);
             ctx.lineTo(width, centerY);
             ctx.stroke();
-
+            
             // Y-axis (left)
             ctx.beginPath();
             ctx.moveTo(centerX, centerY);
             ctx.lineTo(centerX, 0);
             ctx.stroke();
         }
-
+        
         function drawLabels() {
             ctx.fillStyle = '#aaa';
             ctx.font = '14px Arial';
             ctx.textAlign = 'center';
-
+            
             // X-axis labels (positive values only)
-            for (let i = 1; i <= 6; i++) {
-                const x = centerX + i * scale;
+            for (var i = 1; i <= 6; i++) {
+                var x = centerX + i * scale;
                 if (x < width) {
                     ctx.fillText(i.toString(), x, centerY + 20);
                 }
             }
-
+            
             // Y-axis labels (positive values only)
             ctx.textAlign = 'right';
-            for (let i = 1; i <= 4; i++) {
-                const y = centerY - i * scale;
+            for (var i = 1; i <= 4; i++) {
+                var y = centerY - i * scale;
                 if (y > 0) {
                     ctx.fillText(i.toString(), centerX - 10, y + 5);
                 }
             }
-
+            
             // Axis labels
             ctx.font = '16px Arial';
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
             ctx.fillText('Prey Population (x)', centerX + 200, centerY + 40);
-
+            
             ctx.save();
             ctx.translate(15, centerY - 100);
             ctx.rotate(-Math.PI / 2);
             ctx.fillText('Predator Population (y)', 0, 0);
             ctx.restore();
         }
-
+        
         function drawEquilibrium() {
             // Fixed point at (γ/δ, α/β)
-            const eqX = gamma / delta;
-            const eqY = alpha / beta;
-
-            const screenX = centerX + eqX * scale;
-            const screenY = centerY - eqY * scale;
-
+            var eqX = gamma / delta;
+            var eqY = alpha / beta;
+            
+            var screenX = centerX + eqX * scale;
+            var screenY = centerY - eqY * scale;
+            
             if (screenX >= centerX && screenX <= width && screenY >= 0 && screenY <= centerY) {
                 ctx.fillStyle = '#ffffff';
                 ctx.beginPath();
@@ -363,24 +532,25 @@
                 ctx.fill();
             }
         }
-
+        
         function animate() {
             ctx.clearRect(0, 0, width, height);
-
+            
             drawGrid();
             drawLabels();
+            drawOrbitPaths();
             drawEquilibrium();
-
+            
             // Update and draw particles
-            particles.forEach(particle => {
-                particle.update(0.02);
-                particle.draw();
-            });
-
+            for (var i = 0; i < particles.length; i++) {
+                particles[i].update(0.02);
+                particles[i].draw();
+            }
+            
             time += 0.02;
             animationId = requestAnimationFrame(animate);
         }
-
+        
         function resetAnimation() {
             if (animationId) {
                 cancelAnimationFrame(animationId);
@@ -389,28 +559,64 @@
             initializeParticles();
             animate();
         }
-
+        
         // Parameter controls
         function setupControls() {
-            const controls = ['alpha', 'beta', 'gamma', 'delta'];
-
-            controls.forEach(param => {
-                const slider = document.getElementById(param);
-                const valueDisplay = document.getElementById(param + '-value');
-
-                slider.addEventListener('input', (e) => {
-                    const value = parseFloat(e.target.value);
-                    window[param] = value;
-                    valueDisplay.textContent = value.toFixed(1);
-                    resetAnimation();
-                });
+            var numParticlesSlider = document.getElementById('numParticles');
+            var numParticlesValue = document.getElementById('numParticles-value');
+            numParticlesSlider.addEventListener('input', function(e) {
+                numParticles = parseInt(e.target.value);
+                numParticlesValue.textContent = numParticles.toString();
+                console.log("Number of particles changed to:", numParticles);
+                updateInitialConditions();
+                resetAnimation();
+            });
+            
+            var alphaSlider = document.getElementById('alpha');
+            var alphaValue = document.getElementById('alpha-value');
+            alphaSlider.addEventListener('input', function(e) {
+                alpha = parseFloat(e.target.value);
+                alphaValue.textContent = alpha.toFixed(1);
+                console.log("Alpha changed to:", alpha);
+                resetAnimation();
+            });
+            
+            var betaSlider = document.getElementById('beta');
+            var betaValue = document.getElementById('beta-value');
+            betaSlider.addEventListener('input', function(e) {
+                beta = parseFloat(e.target.value);
+                betaValue.textContent = beta.toFixed(1);
+                console.log("Beta changed to:", beta);
+                resetAnimation();
+            });
+            
+            var gammaSlider = document.getElementById('gamma');
+            var gammaValue = document.getElementById('gamma-value');
+            gammaSlider.addEventListener('input', function(e) {
+                gamma = parseFloat(e.target.value);
+                gammaValue.textContent = gamma.toFixed(1);
+                console.log("Gamma changed to:", gamma);
+                resetAnimation();
+            });
+            
+            var deltaSlider = document.getElementById('delta');
+            var deltaValue = document.getElementById('delta-value');
+            deltaSlider.addEventListener('input', function(e) {
+                delta = parseFloat(e.target.value);
+                deltaValue.textContent = delta.toFixed(1);
+                console.log("Delta changed to:", delta);
+                resetAnimation();
             });
         }
-
+        
+        console.log("All functions defined, initializing...");
+        
         // Initialize
         setupControls();
         initializeParticles();
         animate();
+        
+        console.log("Initialization complete");
     </script>
 </body>
 </html>
